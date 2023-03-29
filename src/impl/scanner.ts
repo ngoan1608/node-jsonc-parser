@@ -177,6 +177,65 @@ export function createScanner(text: string, ignoreTrivia: boolean = false): JSON
 		return result;
 	}
 
+	function scanParamSubKey() {
+		pos++;
+		let subKey = '';
+		if (text.charCodeAt(pos) === CharacterCodes.space || text.charCodeAt(pos) === CharacterCodes.colon){
+			return ;
+		} else if (text.charCodeAt(pos) !== CharacterCodes.openBracket){
+			scanError = ScanError.UnexpectedBeginParamAssign;
+		} else {
+			pos++;
+			if (text.charCodeAt(pos) !== CharacterCodes.singleQuote){
+				scanError = ScanError.InvalidParamAssign;
+			} else {
+				// expect identifier
+				while (true){
+					pos++;
+					if (text.charCodeAt(pos) === CharacterCodes.singleQuote){
+						pos++;
+						if ((subKey === '') || (text.charCodeAt(pos) !== CharacterCodes.closeBracket)){
+							scanError = ScanError.InvalidParamAssign;
+						} else {
+							scanParamSubKey();
+						}
+						break;
+					} else {
+						subKey += text[pos];
+					}
+				}
+			}
+		}
+	}
+
+	function scanParamReAssignment(): string {
+		let result = '';
+		let paramName = '';
+		let start = pos;
+		pos++;
+		if (text.charCodeAt(pos) !== CharacterCodes.openBrace){
+			scanError = ScanError.UnexpectedBeginParamAssign;
+		} else {
+			// expect identifier
+			while (true){
+				pos++;
+				if (text.charCodeAt(pos) === CharacterCodes.closeBrace){
+					if (paramName === ''){
+						scanError = ScanError.InvalidParamAssign;
+					} else {
+						scanParamSubKey();
+					}
+					break;
+				} else {
+					paramName += text[pos];
+				}
+			}
+		}
+
+		result = text.substring(start-1, pos);
+		return result;
+	}
+
 	function scanNext(): SyntaxKind {
 
 		value = '';
@@ -237,6 +296,12 @@ export function createScanner(text: string, ignoreTrivia: boolean = false): JSON
 			case CharacterCodes.comma:
 				pos++;
 				return token = SyntaxKind.CommaToken;
+
+			// Param assginment: ${params}['glo']['globalString']
+			case CharacterCodes.dollar:
+				pos++;
+				value = scanParamReAssignment();
+				return token = SyntaxKind.ParamReAssignment;
 
 			// strings
 			case CharacterCodes.doubleQuote:
@@ -333,11 +398,15 @@ export function createScanner(text: string, ignoreTrivia: boolean = false): JSON
 				}
 				if (tokenOffset !== pos) {
 					value = text.substring(tokenOffset, pos);
-					// keywords: true, false, null
-					switch (value) {
+					// keywords: true, false, null 
+					// added: True, False, None for python-preprocessor
+					switch (value) {	
 						case 'true': return token = SyntaxKind.TrueKeyword;
 						case 'false': return token = SyntaxKind.FalseKeyword;
 						case 'null': return token = SyntaxKind.NullKeyword;
+						case 'True': return token = SyntaxKind.TrueKeyword;
+						case 'False': return token = SyntaxKind.FalseKeyword;
+						case 'None': return token = SyntaxKind.NullKeyword;
 					}
 					return token = SyntaxKind.Unknown;
 				}
@@ -479,6 +548,7 @@ const enum CharacterCodes {
 	colon = 0x3A,                 // :
 	comma = 0x2C,                 // ,
 	dot = 0x2E,                   // .
+	singleQuote = 0x27,           // '
 	doubleQuote = 0x22,           // "
 	minus = 0x2D,                 // -
 	openBrace = 0x7B,             // {
@@ -488,4 +558,5 @@ const enum CharacterCodes {
 
 	formFeed = 0x0C,              // \f
 	tab = 0x09,                   // \t
+	dollar = 0x24,                // $
 }
